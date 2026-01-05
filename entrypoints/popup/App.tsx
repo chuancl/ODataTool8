@@ -4,11 +4,9 @@ import ReactDOM from 'react-dom/client';
 import { NextUIProvider } from "@nextui-org/system";
 import { Button } from "@nextui-org/button";
 import { Input } from "@nextui-org/input";
-import { Switch } from "@nextui-org/switch";
 import { Divider } from "@nextui-org/divider";
-import { ScrollShadow } from "@nextui-org/scroll-shadow";
-import { getSettings, saveSettings, AppSettings } from '@/utils/storage';
-import { Settings, ExternalLink, Plus, Trash2, Globe, Upload } from 'lucide-react';
+import { getSettings, AppSettings } from '@/utils/storage';
+import { Settings, ExternalLink, Globe, Upload } from 'lucide-react';
 import { browser } from 'wxt/browser';
 import { storage } from 'wxt/storage';
 import { ToastProvider, useToast } from '@/components/ui/ToastContext';
@@ -16,43 +14,19 @@ import '../../assets/main.css';
 
 // 内部组件使用 Toast
 const PopupContent: React.FC = () => {
-  const [settings, setSettings] = useState<AppSettings | null>(null);
-  const [newUrl, setNewUrl] = useState('');
   const [manualInput, setManualInput] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const toast = useToast();
 
+  // 尝试获取当前 Tab URL 填充输入框
   useEffect(() => {
-    getSettings().then(setSettings);
+    browser.tabs.query({ active: true, currentWindow: true }).then((tabs) => {
+      const currentUrl = tabs[0]?.url;
+      if (currentUrl && (currentUrl.includes('.svc') || currentUrl.includes('/odata/') || currentUrl.includes('$metadata'))) {
+        setManualInput(currentUrl);
+      }
+    });
   }, []);
-
-  const toggleAutoDetect = (val: boolean) => {
-    if (!settings) return;
-    const newSettings = { ...settings, autoDetect: val };
-    setSettings(newSettings);
-    saveSettings(newSettings);
-    toast.info(`Auto-Detect ${val ? 'Enabled' : 'Disabled'}`);
-  };
-
-  const addToWhitelist = () => {
-    if (!settings || !newUrl) {
-        if (!newUrl) toast.warning("Please enter a domain");
-        return;
-    }
-    const newSettings = { ...settings, whitelist: [...settings.whitelist, newUrl] };
-    setSettings(newSettings);
-    saveSettings(newSettings);
-    setNewUrl('');
-    toast.success("Domain added to whitelist");
-  };
-
-  const removeFromWhitelist = (url: string) => {
-    if (!settings) return;
-    const newSettings = { ...settings, whitelist: settings.whitelist.filter(u => u !== url) };
-    setSettings(newSettings);
-    saveSettings(newSettings);
-    toast.info("Domain removed");
-  };
 
   const openDashboard = (url?: string) => {
     const targetUrl = url || manualInput;
@@ -94,8 +68,6 @@ const PopupContent: React.FC = () => {
     }
   };
 
-  if (!settings) return <div className="p-4">Loading...</div>;
-
   return (
       <div className="w-[360px] bg-background text-foreground flex flex-col h-fit max-h-[600px] border border-divider">
         {/* Header */}
@@ -104,35 +76,40 @@ const PopupContent: React.FC = () => {
             <Globe className="w-5 h-5 text-primary" />
             <h1 className="text-base font-bold">OData Master</h1>
           </div>
-          <Settings className="w-4 h-4 text-default-400" />
+          <div className="text-[10px] text-default-400 bg-default-100 px-2 py-0.5 rounded">
+            DevTools
+          </div>
         </header>
 
         <div className="p-4 flex flex-col gap-4">
           {/* Main Action: URL Input */}
           <section>
             <Input 
-              label="快速访问 URL (Quick Access URL)" 
-              placeholder="https://..." 
+              label="OData Service URL" 
+              placeholder="https://.../Service.svc" 
               size="sm" 
               variant="bordered"
               value={manualInput} 
               onValueChange={setManualInput}
-              className="mb-2"
+              className="mb-3"
+              description="输入 URL 或点击按钮自动加载当前页"
             />
             <Button 
               color="primary" 
               fullWidth 
               endContent={<ExternalLink size={16}/>} 
               onPress={() => openDashboard()}
-              className="font-medium"
+              className="font-medium shadow-md shadow-primary/20"
             >
               分析并可视化 (Analyze & Visualize)
             </Button>
           </section>
 
+          <Divider className="my-1"/>
+
           {/* File Upload Section */}
           <section className="flex flex-col gap-2">
-              <div className="text-xs text-default-500 font-medium">或上传文件 (Or upload file)</div>
+              <div className="text-xs text-default-500 font-medium px-1">本地文件 (Local File)</div>
               <input 
                   type="file" 
                   accept=".xml,.edmx,.txt" 
@@ -146,59 +123,13 @@ const PopupContent: React.FC = () => {
                   fullWidth 
                   startContent={<Upload size={16}/>} 
                   onPress={() => fileInputRef.current?.click()}
-                  className="font-medium border border-secondary-200"
+                  className="font-medium border border-secondary-200 bg-secondary-50"
               >
                   上传 Metadata 文件 ($metadata)
               </Button>
-          </section>
-
-          <Divider />
-
-          {/* Settings */}
-          <section className="flex justify-between items-center">
-            <div className="flex flex-col">
-              <span className="text-sm font-medium">自动检测 OData (Auto-Detect)</span>
-              <span className="text-xs text-default-400">页面加载时扫描 Metadata</span>
-            </div>
-            <Switch size="sm" isSelected={settings.autoDetect} onValueChange={toggleAutoDetect} />
-          </section>
-
-          <Divider />
-
-          {/* Whitelist */}
-          <section className="flex flex-col gap-2">
-            <h3 className="text-sm font-bold flex items-center gap-2">
-              白名单 (Whitelist) <span className="text-xs font-normal text-default-400">(Always Active)</span>
-            </h3>
-            <div className="flex gap-2">
-              <Input 
-                size="sm" 
-                placeholder="domain.com" 
-                value={newUrl} 
-                onValueChange={setNewUrl} 
-                className="flex-1"
-              />
-              <Button isIconOnly size="sm" color="success" variant="flat" onPress={addToWhitelist}>
-                <Plus size={16} />
-              </Button>
-            </div>
-            
-            <ScrollShadow className="max-h-[120px] w-full flex flex-col gap-2 mt-1">
-              {settings.whitelist.length === 0 && (
-                <div className="text-xs text-default-400 text-center py-2">无白名单域名 (No domains)</div>
-              )}
-              {settings.whitelist.map((url, idx) => (
-                <div key={idx} className="flex justify-between items-center p-2 rounded-lg bg-content2 hover:bg-content3 transition-colors group">
-                  <span className="text-xs truncate max-w-[240px]">{url}</span>
-                  <button 
-                    className="opacity-0 group-hover:opacity-100 text-danger hover:bg-danger/20 p-1 rounded transition-all"
-                    onClick={() => removeFromWhitelist(url)}
-                  >
-                    <Trash2 size={12} />
-                  </button>
-                </div>
-              ))}
-            </ScrollShadow>
+              <p className="text-[10px] text-default-400 px-1">
+                支持 .xml, .edmx 格式的元数据文件
+              </p>
           </section>
         </div>
         
