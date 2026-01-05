@@ -10,7 +10,8 @@ import { detectODataVersion, parseMetadataToSchema, ODataVersion, ParsedSchema }
 import ODataERDiagram from '@/components/ODataERDiagram';
 import QueryBuilder from '@/components/QueryBuilder';
 import MockDataGenerator from '@/components/MockDataGenerator';
-import { Moon, Sun, Search, RotateCw } from 'lucide-react';
+import { UsageGuide } from '@/components/UsageGuide';
+import { Moon, Sun, Search, RotateCw, BookOpen, Database, SearchCode, Braces } from 'lucide-react';
 import { ToastProvider, useToast } from '@/components/ui/ToastContext';
 import { storage } from 'wxt/storage';
 // 使用相对路径引入样式
@@ -25,7 +26,7 @@ const DashboardContent: React.FC = () => {
   const [schema, setSchema] = useState<ParsedSchema | null>(null);
   const [rawMetadataXml, setRawMetadataXml] = useState<string>('');
   
-  // 增加 Tab 状态控制
+  // 增加 Tab 状态控制，默认显示 ER 图 (er)，但用户可以随时切换到 guide
   const [activeTab, setActiveTab] = useState<string>('er');
   
   const toast = useToast();
@@ -208,13 +209,21 @@ const DashboardContent: React.FC = () => {
                   panel: "hidden" // Hide default panel behavior completely
                 }}
               >
-                <Tab key="er" title={<div className="flex items-center gap-2"><span>ER Diagram</span></div>} />
-                <Tab key="query" title={<div className="flex items-center gap-2"><span>Query Builder</span></div>} />
-                <Tab key="mock" title={<div className="flex items-center gap-2"><span>Mock Data</span></div>} />
+                {/* 新增: 使用指南页签 (最左侧) */}
+                <Tab key="guide" title={<div className="flex items-center gap-2"><BookOpen size={16}/><span>Guide</span></div>} />
+                <Tab key="er" title={<div className="flex items-center gap-2"><Database size={16}/><span>ER Diagram</span></div>} />
+                <Tab key="query" title={<div className="flex items-center gap-2"><SearchCode size={16}/><span>Query Builder</span></div>} />
+                <Tab key="mock" title={<div className="flex items-center gap-2"><Braces size={16}/><span>Mock Data</span></div>} />
               </Tabs>
 
               {/* Content Container */}
               <div className="flex-1 w-full h-full p-0 overflow-hidden relative bg-content1">
+                  
+                  {/* Usage Guide View (New) */}
+                  <div className="w-full h-full absolute inset-0 bg-content1" style={{ display: activeTab === 'guide' ? 'block' : 'none', visibility: activeTab === 'guide' ? 'visible' : 'hidden' }}>
+                      <UsageGuide isDark={isDark} />
+                  </div>
+
                   {/* ER Diagram View */}
                   <div className="w-full h-full absolute inset-0" style={{ display: activeTab === 'er' ? 'block' : 'none', visibility: activeTab === 'er' ? 'visible' : 'hidden' }}>
                      <ODataERDiagram url={url} schema={schema} isLoading={isValidating} xmlContent={rawMetadataXml} isDark={isDark} />
