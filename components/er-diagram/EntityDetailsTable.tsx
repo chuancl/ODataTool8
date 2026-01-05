@@ -1,5 +1,5 @@
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, ReactNode } from 'react';
 import { EntityProperty } from '@/utils/odata-helper';
 import { Key, Link2, ChevronDown, ChevronUp, GripVertical } from 'lucide-react';
 import { useReactTable, getCoreRowModel, getSortedRowModel, flexRender, createColumnHelper, SortingState, ColumnOrderState } from '@tanstack/react-table';
@@ -300,7 +300,7 @@ export const EntityDetailsTable = ({
                                             className="flex items-center gap-1 cursor-pointer flex-1 overflow-hidden"
                                             onClick={header.column.getToggleSortingHandler()}
                                         >
-                                            <span className="truncate">{flexRender(header.column.columnDef.header, header.getContext())}</span>
+                                            <span className="truncate">{flexRender(header.column.columnDef.header, header.getContext()) as ReactNode}</span>
                                             {{
                                                 asc: <ChevronUp size={12} className={isDark ? "text-[#61afef]" : "text-primary"} shrink-0 />,
                                                 desc: <ChevronDown size={12} className={isDark ? "text-[#61afef]" : "text-primary"} shrink-0 />,
@@ -337,7 +337,7 @@ export const EntityDetailsTable = ({
                         >
                             {row.getVisibleCells().map(cell => (
                                 <td key={cell.id} className={`p-2 text-xs h-10 border-r last:border-r-0 align-middle overflow-hidden text-ellipsis ${isDark ? 'border-[#3e4451]' : 'border-divider/20'}`}>
-                                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                                    {flexRender(cell.column.columnDef.cell, cell.getContext()) as ReactNode}
                                 </td>
                             ))}
                         </tr>
