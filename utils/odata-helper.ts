@@ -81,24 +81,91 @@ export const getMetadataUrl = (url: string): string => {
     return cleanUrl.endsWith('/') ? `${cleanUrl}$metadata` : `${cleanUrl}/$metadata`;
 };
 
-// 1. OData 检测与版本识别 (优化：支持传入文本直接判断，减少重复请求)
+// Helper: Parse OData Version from Metadata XML string
+const parseVersionFromXml = (xml: string): ODataVersion => {
+    if (xml.includes('Version="4.0"')) return 'V4';
+    if (xml.includes('Version="1.0"') || xml.includes('Version="2.0"')) return 'V2';
+    if (xml.includes('Version="3.0"')) return 'V3';
+    return 'Unknown';
+};
+
+// 1. OData 检测与版本识别 (优化：支持传入文本直接判断，增强：支持检查原始 URL 响应)
 export const detectODataVersion = async (urlOrXml: string, isXmlContent: boolean = false): Promise<ODataVersion> => {
   try {
-    let text = urlOrXml;
-    
-    if (!isXmlContent) {
-        const metadataUrl = getMetadataUrl(urlOrXml);
-        const response = await fetch(metadataUrl);
-        if (!response.ok) {
-             // 如果 fetch 失败，可能推断错误，或者不是 OData 服务
-             return 'Unknown';
-        }
-        text = await response.text();
+    // 1. 直接解析 XML 内容 (通常用于 Dashboard 加载后)
+    if (isXmlContent) {
+        return parseVersionFromXml(urlOrXml);
     }
+
+    const url = urlOrXml;
     
-    if (text.includes('Version="4.0"')) return 'V4';
-    if (text.includes('Version="2.0"')) return 'V2';
-    if (text.includes('Version="3.0"')) return 'V3';
+    // 2. 尝试推断并获取 Metadata (优先策略，因为 Metadata 最准确)
+    try {
+        const metadataUrl = getMetadataUrl(url);
+        // 如果推断出的 metadataUrl 和原 URL 不同，尝试获取
+        if (metadataUrl !== url) {
+            const res = await fetch(metadataUrl, { method: 'GET' });
+            if (res.ok) {
+                const text = await res.text();
+                // 简单的 XML 校验
+                if (text.includes('<edmx:Edmx')) {
+                    const ver = parseVersionFromXml(text);
+                    if (ver !== 'Unknown') return ver;
+                }
+            }
+        }
+    } catch (e) {
+        console.warn("Metadata fetch failed, falling back to direct URL check", e);
+    }
+
+    // 3. 回退策略：检查原始 URL 的响应 (Response Body / Headers Check)
+    // 适用于: 无法推断 Metadata URL，或者 Metadata 访问受限，但数据接口公开的情况
+    try {
+        const res = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json, application/xml, application/atom+xml'
+            }
+        });
+
+        if (res.ok) {
+            const contentType = res.headers.get('content-type') || '';
+            const text = await res.text();
+
+            // A. Check Headers
+            const headerVer = res.headers.get('dataserviceversion') || res.headers.get('odata-version');
+            if (headerVer) {
+                if (headerVer.includes('4.0')) return 'V4';
+                if (headerVer.includes('3.0')) return 'V3';
+                if (headerVer.includes('2.0')) return 'V2';
+            }
+
+            // B. Check Body Signature (JSON)
+            if (contentType.includes('json') || text.trim().startsWith('{')) {
+                // V4 Signature
+                if (text.includes('@odata.context') || text.includes('@odata.id')) return 'V4';
+                // V2/V3 Signature
+                if (text.includes('__metadata') || text.includes('"d"')) {
+                    // Try to distinguish V3 via header or specific properties, otherwise fallback to V2
+                    if (headerVer && headerVer.includes('3.0')) return 'V3';
+                    return 'V2'; 
+                }
+            }
+
+            // C. Check Body Signature (XML/Atom)
+            if (contentType.includes('xml') || text.trim().startsWith('<')) {
+                // V4 Namespace
+                if (text.includes('http://docs.oasis-open.org/odata/ns/data')) return 'V4';
+                // V2/V3 Namespace
+                if (text.includes('http://schemas.microsoft.com/ado/2007/08/dataservices')) {
+                    if (headerVer && headerVer.includes('3.0')) return 'V3';
+                    return 'V2';
+                }
+            }
+        }
+    } catch (e) {
+        console.warn("Direct URL check failed", e);
+    }
     
     return 'Unknown';
   } catch (e) {
