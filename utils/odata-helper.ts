@@ -162,8 +162,22 @@ export const getMetadataUrl = getMetadataUrlHeuristic;
 // Helper: Parse OData Version from Metadata XML string
 const parseVersionFromXml = (xml: string): ODataVersion => {
     if (xml.includes('Version="4.0"')) return 'V4';
-    if (xml.includes('Version="1.0"') || xml.includes('Version="2.0"')) return 'V2';
-    if (xml.includes('Version="3.0"')) return 'V3';
+    
+    // Check V3 First (DataServiceVersion or MaxDataServiceVersion = 3.0)
+    if (xml.includes('DataServiceVersion="3.0"') || xml.includes('MaxDataServiceVersion="3.0"') || xml.includes('Version="3.0"')) {
+        return 'V3';
+    }
+
+    // Check V2 Second (DataServiceVersion = 2.0 or Version=2.0)
+    if (xml.includes('DataServiceVersion="2.0"') || xml.includes('MaxDataServiceVersion="2.0"') || xml.includes('Version="2.0"')) {
+        return 'V2';
+    }
+
+    // Fallback: Version="1.0" in Edmx usually implies V2 (or V1/V2 compatible), 
+    // unless it matched V3 rules above. Since V3 also uses Edmx Version="1.0", 
+    // we MUST check V3 rules before this fallback.
+    if (xml.includes('Version="1.0"')) return 'V2';
+
     return 'Unknown';
 };
 
@@ -478,7 +492,7 @@ export const parseMetadataToSchema = (xmlText: string): ParsedSchema => {
   return { entities, complexTypes, entitySets, namespace };
 };
 
-// ... (Rest of file unchanged)
+// ... (Code Generators remain unchanged)
 // SAPUI5 Code Generator, C# Code Generator, Java Code Generator...
 export const generateSAPUI5Code = (op: 'read'|'delete'|'create'|'update', es: string, p: any, v: ODataVersion) => {
     let code = `// SAPUI5 OData ${v} Code for ${op} on ${es}\n`;
