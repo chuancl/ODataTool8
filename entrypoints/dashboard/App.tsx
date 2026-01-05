@@ -7,7 +7,7 @@ import { Tabs, Tab } from "@nextui-org/tabs";
 import { Input } from "@nextui-org/input";
 import { Button } from "@nextui-org/button";
 import { Chip } from "@nextui-org/chip";
-import { detectODataVersion, parseMetadataToSchema, ODataVersion, ParsedSchema, getMetadataUrl, getServiceRoot } from '@/utils/odata-helper';
+import { detectODataVersion, parseMetadataToSchema, ODataVersion, ParsedSchema, probeMetadataUrl } from '@/utils/odata-helper';
 import ODataERDiagram from '@/components/ODataERDiagram';
 import QueryBuilder from '@/components/QueryBuilder';
 import MockDataGenerator from '@/components/MockDataGenerator';
@@ -59,21 +59,26 @@ const DashboardContent: React.FC = () => {
     setRawMetadataXml(''); // Reset raw XML
 
     try {
-        // 1. 统一获取 Metadata XML (Use Smart Helper)
-        // 智能提取：先确定服务根路径，再获取 Metadata URL
-        const serviceRoot = getServiceRoot(targetUrl);
-        const metadataUrl = `${serviceRoot}/$metadata`;
+        // 1. 智能探测：访问 URL，从响应中寻找 Metadata 地址
+        // 这比简单的字符串拼接更准确，支持从子路径 (如 /Orders) 自动定位到根
+        const metadataUrl = await probeMetadataUrl(targetUrl);
         
-        console.log(`Fetching metadata from: ${metadataUrl}`);
+        console.log(`Detected Metadata URL: ${metadataUrl}`);
+        
+        // 2. 获取 Metadata XML
         const res = await fetch(metadataUrl);
-        if (!res.ok) throw new Error(`Fetch failed: ${res.status} ${res.statusText}`);
+        if (!res.ok) throw new Error(`Fetch Metadata failed: ${res.status} ${res.statusText}`);
         
         const xmlText = await res.text();
         setRawMetadataXml(xmlText); // Store raw XML
         
-        // 2. 统一检测版本 (基于 XML 内容)
+        // 3. 统一检测版本 (基于 XML 内容)
         const ver = await detectODataVersion(xmlText, true);
         setOdataVersion(ver);
+        
+        // 4. 计算并修正 Service Root (UI Display)
+        // 假设 metadataUrl 总是以 $metadata 结尾，去掉它即为 Root
+        const serviceRoot = metadataUrl.replace(/\/\$metadata$/, '').replace(/\$metadata$/, '');
         
         if (ver === 'Unknown') {
              toast.warning("无法识别 OData 版本，可能不是标准的 OData 服务。\n(OData version not detected)");
@@ -81,9 +86,7 @@ const DashboardContent: React.FC = () => {
              // 成功提示
              toast.success(`成功加载 OData ${ver} 服务！\n(Loaded OData ${ver} Service successfully)`);
              
-             // *** 关键修复：修正 UI 上的 URL 为服务根地址 ***
              // 如果计算出的 Root 与用户输入的 URL 不同 (例如用户输入了 /Orders)，则更新它。
-             // 避免不必要的更新（例如仅仅是少了末尾斜杠）
              const normalizedInput = targetUrl.replace(/\/$/, '');
              const normalizedRoot = serviceRoot.replace(/\/$/, '');
              
@@ -93,7 +96,7 @@ const DashboardContent: React.FC = () => {
              }
         }
 
-        // 3. 统一解析 Schema
+        // 5. 统一解析 Schema
         const parsedSchema = parseMetadataToSchema(xmlText);
         setSchema(parsedSchema);
 

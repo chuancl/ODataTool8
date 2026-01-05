@@ -84,11 +84,80 @@ export const getServiceRoot = (url: string): string => {
     return cleanUrl.replace(/\/$/, '');
 };
 
-// 智能推断 Metadata URL (基于 getServiceRoot)
-export const getMetadataUrl = (url: string): string => {
+// 静态规则推断 Metadata URL (作为 probe 失败的回退)
+export const getMetadataUrlHeuristic = (url: string): string => {
     const root = getServiceRoot(url);
     return `${root}/$metadata`;
 };
+
+// --- 新增：主动探测 Metadata URL ---
+// 访问给定的 URL，分析返回内容中的上下文信息 (@odata.context 或 xml:base) 来定位真实的 Metadata 地址
+export const probeMetadataUrl = async (userUrl: string): Promise<string> => {
+    // 如果 URL 本身就长得像 Metadata，直接返回
+    if (userUrl.toLowerCase().endsWith('$metadata')) {
+        return userUrl;
+    }
+
+    try {
+        const res = await fetch(userUrl, {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json, application/xml, application/atom+xml'
+            }
+        });
+
+        if (res.ok) {
+            const text = await res.text();
+            
+            // 策略 1: V4 JSON Response (@odata.context)
+            // Example: "@odata.context": "https://.../$metadata#Orders"
+            const v4ContextMatch = text.match(/["']@odata\.context["']\s*:\s*["']([^"']+)["']/);
+            if (v4ContextMatch && v4ContextMatch[1]) {
+                const ctxUrl = v4ContextMatch[1];
+                if (ctxUrl.includes('$metadata')) {
+                    // 截取 $metadata 之前的部分 + $metadata
+                    const splitIndex = ctxUrl.indexOf('$metadata');
+                    return ctxUrl.substring(0, splitIndex + 9);
+                }
+            }
+
+            // 策略 2: V3 JSON Response (odata.metadata)
+            // Example: "odata.metadata": "https://.../$metadata#Products"
+            const v3ContextMatch = text.match(/["']odata\.metadata["']\s*:\s*["']([^"']+)["']/);
+            if (v3ContextMatch && v3ContextMatch[1]) {
+                const ctxUrl = v3ContextMatch[1];
+                if (ctxUrl.includes('$metadata')) {
+                    const splitIndex = ctxUrl.indexOf('$metadata');
+                    return ctxUrl.substring(0, splitIndex + 9);
+                }
+            }
+
+            // 策略 3: XML/Atom Response (xml:base)
+            // Example: <feed xml:base="https://.../Northwind.svc/" ...>
+            const xmlBaseMatch = text.match(/xml:base=["']([^"']+)["']/);
+            if (xmlBaseMatch && xmlBaseMatch[1]) {
+                let base = xmlBaseMatch[1];
+                if (!base.endsWith('/')) base += '/';
+                return `${base}$metadata`;
+            }
+
+            // 策略 4: 正则暴力匹配任何看起来像 Metadata URL 的字符串
+            // 寻找 http.../$metadata
+            const rawMatch = text.match(/(https?:\/\/[^"'\s]+\/\$metadata)/);
+            if (rawMatch && rawMatch[1]) {
+                return rawMatch[1];
+            }
+        }
+    } catch (e) {
+        console.warn("Probe request failed, falling back to heuristics:", e);
+    }
+
+    // 如果主动探测失败，回退到基于 URL 字符串规则的推断
+    return getMetadataUrlHeuristic(userUrl);
+};
+
+// 兼容旧代码的别名
+export const getMetadataUrl = getMetadataUrlHeuristic;
 
 // Helper: Parse OData Version from Metadata XML string
 const parseVersionFromXml = (xml: string): ODataVersion => {
@@ -110,9 +179,9 @@ export const detectODataVersion = async (urlOrXml: string, isXmlContent: boolean
     
     // 2. 尝试推断并获取 Metadata (优先策略，因为 Metadata 最准确)
     try {
-        const metadataUrl = getMetadataUrl(url);
-        // 如果推断出的 metadataUrl 和原 URL 不同，尝试获取
-        // 或者如果原 URL 本身就是 metadata
+        // 使用新的 Probe 逻辑
+        const metadataUrl = await probeMetadataUrl(url);
+        
         const res = await fetch(metadataUrl, { method: 'GET' });
         if (res.ok) {
             const text = await res.text();
@@ -409,7 +478,7 @@ export const parseMetadataToSchema = (xmlText: string): ParsedSchema => {
   return { entities, complexTypes, entitySets, namespace };
 };
 
-// ... (Rest of the file remains unchanged: Code generators)
+// ... (Rest of file unchanged)
 // SAPUI5 Code Generator, C# Code Generator, Java Code Generator...
 export const generateSAPUI5Code = (op: 'read'|'delete'|'create'|'update', es: string, p: any, v: ODataVersion) => {
     let code = `// SAPUI5 OData ${v} Code for ${op} on ${es}\n`;
