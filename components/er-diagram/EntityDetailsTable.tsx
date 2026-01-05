@@ -180,9 +180,12 @@ export const EntityDetailsTable = ({
             header: 'Default',
             enableSorting: true,
             size: 90,
-            cell: info => info.getValue() ? 
-                <span className={`font-mono text-xs px-1 rounded border max-w-[80px] truncate block ${isDark ? "bg-[#21252b] text-[#98c379] border-[#3e4451]" : "bg-default-50 text-default-600 border-default-100"}`} title={info.getValue()}>{info.getValue()}</span> : 
-                <span className={`text-xs ${isDark ? "text-[#5c6370]/50" : "text-default-200"}`}>-</span>
+            cell: info => {
+                const val = info.getValue() as string;
+                return val ? 
+                    <span className={`font-mono text-xs px-1 rounded border max-w-[80px] truncate block ${isDark ? "bg-[#21252b] text-[#98c379] border-[#3e4451]" : "bg-default-50 text-default-600 border-default-100"}`} title={val}>{val}</span> : 
+                    <span className={`text-xs ${isDark ? "text-[#5c6370]/50" : "text-default-200"}`}>-</span>;
+            }
         }),
 
         // 6. Relation Column

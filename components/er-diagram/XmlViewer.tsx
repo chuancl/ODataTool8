@@ -5,8 +5,7 @@ import { FileCode, Download, Copy } from 'lucide-react';
 import xmlFormat from 'xml-formatter';
 import CodeMirror from '@uiw/react-codemirror';
 import { xml } from '@codemirror/lang-xml';
-import { vscodeDark } from '@uiw/codemirror-theme-vscode';
-import { githubLight } from '@uiw/codemirror-theme-github';
+import { vscodeDark, vscodeLight } from '@uiw/codemirror-theme-vscode';
 
 interface XmlViewerProps {
     xmlContent?: string;
@@ -14,7 +13,8 @@ interface XmlViewerProps {
 }
 
 export const XmlViewer: React.FC<XmlViewerProps> = ({ xmlContent, isDark }) => {
-    const editorTheme = isDark ? vscodeDark : githubLight;
+    // 使用 vscodeLight 替代 githubLight 以获得更好的亮色模式区分度
+    const editorTheme = isDark ? vscodeDark : vscodeLight;
 
     const formattedXml = useMemo(() => {
         if (!xmlContent) return '';
