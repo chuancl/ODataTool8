@@ -53,17 +53,46 @@ interface AssociationConstraint {
     dependent: { role: string; propertyRef: string };
 }
 
+// 智能推断 Metadata URL
+export const getMetadataUrl = (url: string): string => {
+    let cleanUrl = url.trim().split('#')[0].split('?')[0];
+    
+    // 如果已经是 metadata 结尾
+    if (cleanUrl.toLowerCase().endsWith('$metadata')) return cleanUrl;
+
+    // 1. 检查 .svc (常见于 V2/V3/WCF Data Services)
+    // 例子: .../Northwind.svc/Orders -> .../Northwind.svc/$metadata
+    const svcIndex = cleanUrl.toLowerCase().indexOf('.svc');
+    if (svcIndex > -1) {
+        const root = cleanUrl.substring(0, svcIndex + 4); 
+        return `${root}/$metadata`;
+    }
+
+    // 2. 检查 /odata/ (常见约定)
+    // 例子: .../api/odata/Users -> .../api/odata/$metadata
+    const odataIndex = cleanUrl.toLowerCase().indexOf('/odata/');
+    if (odataIndex > -1) {
+        // 假设 /odata/ 是服务根路径的一部分
+        const root = cleanUrl.substring(0, odataIndex + 6); // include /odata
+        return `${root}/$metadata`;
+    }
+
+    // 3. 默认回退：直接追加 (适用于已经是根路径的情况)
+    return cleanUrl.endsWith('/') ? `${cleanUrl}$metadata` : `${cleanUrl}/$metadata`;
+};
+
 // 1. OData 检测与版本识别 (优化：支持传入文本直接判断，减少重复请求)
 export const detectODataVersion = async (urlOrXml: string, isXmlContent: boolean = false): Promise<ODataVersion> => {
   try {
     let text = urlOrXml;
     
     if (!isXmlContent) {
-        let metadataUrl = urlOrXml;
-        if (!urlOrXml.endsWith('$metadata')) {
-            metadataUrl = urlOrXml.endsWith('/') ? `${urlOrXml}$metadata` : `${urlOrXml}/$metadata`;
-        }
+        const metadataUrl = getMetadataUrl(urlOrXml);
         const response = await fetch(metadataUrl);
+        if (!response.ok) {
+             // 如果 fetch 失败，可能推断错误，或者不是 OData 服务
+             return 'Unknown';
+        }
         text = await response.text();
     }
     

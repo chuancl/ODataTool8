@@ -1,4 +1,5 @@
 
+
 import React, { useEffect, useState } from 'react';
 import ReactDOM from 'react-dom/client';
 import { NextUIProvider } from "@nextui-org/system";
@@ -6,7 +7,7 @@ import { Tabs, Tab } from "@nextui-org/tabs";
 import { Input } from "@nextui-org/input";
 import { Button } from "@nextui-org/button";
 import { Chip } from "@nextui-org/chip";
-import { detectODataVersion, parseMetadataToSchema, ODataVersion, ParsedSchema } from '@/utils/odata-helper';
+import { detectODataVersion, parseMetadataToSchema, ODataVersion, ParsedSchema, getMetadataUrl } from '@/utils/odata-helper';
 import ODataERDiagram from '@/components/ODataERDiagram';
 import QueryBuilder from '@/components/QueryBuilder';
 import MockDataGenerator from '@/components/MockDataGenerator';
@@ -58,8 +59,10 @@ const DashboardContent: React.FC = () => {
     setRawMetadataXml(''); // Reset raw XML
 
     try {
-        // 1. 统一获取 Metadata XML
-        const metadataUrl = targetUrl.endsWith('$metadata') ? targetUrl : `${targetUrl.replace(/\/$/, '')}/$metadata`;
+        // 1. 统一获取 Metadata XML (Use Smart Helper)
+        const metadataUrl = getMetadataUrl(targetUrl);
+        
+        console.log(`Fetching metadata from: ${metadataUrl}`);
         const res = await fetch(metadataUrl);
         if (!res.ok) throw new Error(`Fetch failed: ${res.status} ${res.statusText}`);
         
