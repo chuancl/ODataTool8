@@ -1,3 +1,4 @@
+
 import { storage } from 'wxt/storage';
 
 export interface AppSettings {
@@ -14,7 +15,7 @@ export interface ComponentGeometry {
 }
 
 const defaultSettings: AppSettings = {
-  autoDetect: true,
+  autoDetect: false, // 默认为 false，不自动跳转
   theme: 'light',
   whitelist: []
 };

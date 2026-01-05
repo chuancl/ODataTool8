@@ -1,15 +1,16 @@
-import React, { useEffect, useState } from 'react';
+
+import React, { useEffect, useState, useRef } from 'react';
 import ReactDOM from 'react-dom/client';
 import { NextUIProvider } from "@nextui-org/system";
 import { Button } from "@nextui-org/button";
 import { Input } from "@nextui-org/input";
 import { Switch } from "@nextui-org/switch";
-import { Card, CardBody } from "@nextui-org/card";
 import { Divider } from "@nextui-org/divider";
 import { ScrollShadow } from "@nextui-org/scroll-shadow";
 import { getSettings, saveSettings, AppSettings } from '@/utils/storage';
-import { Settings, ExternalLink, Plus, Trash2, Globe } from 'lucide-react';
+import { Settings, ExternalLink, Plus, Trash2, Globe, Upload } from 'lucide-react';
 import { browser } from 'wxt/browser';
+import { storage } from 'wxt/storage';
 import { ToastProvider, useToast } from '@/components/ui/ToastContext';
 import '../../assets/main.css';
 
@@ -18,6 +19,7 @@ const PopupContent: React.FC = () => {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [newUrl, setNewUrl] = useState('');
   const [manualInput, setManualInput] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const toast = useToast();
 
   useEffect(() => {
@@ -65,6 +67,33 @@ const PopupContent: React.FC = () => {
     }
   };
 
+  // 处理文件上传
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+        const text = await file.text();
+        // 将文件内容保存到 storage，以便 dashboard 读取
+        await storage.setItem('local:uploadedMetadata', text);
+        
+        // 打开 Dashboard，标记 source 为 upload
+        const pagePath = 'dashboard.html';
+        const dashboardUrl = (browser.runtime as any).getURL(`${pagePath}#source=upload`);
+        browser.tabs.create({ url: dashboardUrl });
+        
+        toast.success("文件读取成功，正在打开分析页...");
+    } catch (err) {
+        console.error(err);
+        toast.error("读取文件失败");
+    } finally {
+        // 重置 input 以便允许再次上传同名文件
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
+    }
+  };
+
   if (!settings) return <div className="p-4">Loading...</div>;
 
   return (
@@ -79,10 +108,10 @@ const PopupContent: React.FC = () => {
         </header>
 
         <div className="p-4 flex flex-col gap-4">
-          {/* Main Action */}
+          {/* Main Action: URL Input */}
           <section>
             <Input 
-              label="Quick Access URL" 
+              label="快速访问 URL (Quick Access URL)" 
               placeholder="https://..." 
               size="sm" 
               variant="bordered"
@@ -97,8 +126,30 @@ const PopupContent: React.FC = () => {
               onPress={() => openDashboard()}
               className="font-medium"
             >
-              Analyze & Visualize
+              分析并可视化 (Analyze & Visualize)
             </Button>
+          </section>
+
+          {/* File Upload Section */}
+          <section className="flex flex-col gap-2">
+              <div className="text-xs text-default-500 font-medium">或上传文件 (Or upload file)</div>
+              <input 
+                  type="file" 
+                  accept=".xml,.edmx,.txt" 
+                  className="hidden" 
+                  ref={fileInputRef} 
+                  onChange={handleFileUpload} 
+              />
+              <Button 
+                  color="secondary" 
+                  variant="flat"
+                  fullWidth 
+                  startContent={<Upload size={16}/>} 
+                  onPress={() => fileInputRef.current?.click()}
+                  className="font-medium border border-secondary-200"
+              >
+                  上传 Metadata 文件 ($metadata)
+              </Button>
           </section>
 
           <Divider />
@@ -106,8 +157,8 @@ const PopupContent: React.FC = () => {
           {/* Settings */}
           <section className="flex justify-between items-center">
             <div className="flex flex-col">
-              <span className="text-sm font-medium">Auto-Detect OData</span>
-              <span className="text-xs text-default-400">Scan metadata on page load</span>
+              <span className="text-sm font-medium">自动检测 OData (Auto-Detect)</span>
+              <span className="text-xs text-default-400">页面加载时扫描 Metadata</span>
             </div>
             <Switch size="sm" isSelected={settings.autoDetect} onValueChange={toggleAutoDetect} />
           </section>
@@ -117,7 +168,7 @@ const PopupContent: React.FC = () => {
           {/* Whitelist */}
           <section className="flex flex-col gap-2">
             <h3 className="text-sm font-bold flex items-center gap-2">
-              Whitelist <span className="text-xs font-normal text-default-400">(Always Active)</span>
+              白名单 (Whitelist) <span className="text-xs font-normal text-default-400">(Always Active)</span>
             </h3>
             <div className="flex gap-2">
               <Input 
@@ -134,7 +185,7 @@ const PopupContent: React.FC = () => {
             
             <ScrollShadow className="max-h-[120px] w-full flex flex-col gap-2 mt-1">
               {settings.whitelist.length === 0 && (
-                <div className="text-xs text-default-400 text-center py-2">No domains whitelisted</div>
+                <div className="text-xs text-default-400 text-center py-2">无白名单域名 (No domains)</div>
               )}
               {settings.whitelist.map((url, idx) => (
                 <div key={idx} className="flex justify-between items-center p-2 rounded-lg bg-content2 hover:bg-content3 transition-colors group">

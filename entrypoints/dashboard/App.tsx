@@ -11,7 +11,8 @@ import ODataERDiagram from '@/components/ODataERDiagram';
 import QueryBuilder from '@/components/QueryBuilder';
 import MockDataGenerator from '@/components/MockDataGenerator';
 import { Moon, Sun, Search, RotateCw } from 'lucide-react';
-import { ToastProvider, useToast } from '@/components/ui/ToastContext'; // Import Toast
+import { ToastProvider, useToast } from '@/components/ui/ToastContext';
+import { storage } from 'wxt/storage';
 // 使用相对路径引入样式
 import '../../assets/main.css';
 
@@ -22,21 +23,43 @@ const DashboardContent: React.FC = () => {
   const [odataVersion, setOdataVersion] = useState<ODataVersion>('Unknown');
   const [isValidating, setIsValidating] = useState(false);
   const [schema, setSchema] = useState<ParsedSchema | null>(null);
-  const [rawMetadataXml, setRawMetadataXml] = useState<string>(''); // New state for raw XML
+  const [rawMetadataXml, setRawMetadataXml] = useState<string>('');
   
   // 增加 Tab 状态控制
   const [activeTab, setActiveTab] = useState<string>('er');
   
-  const toast = useToast(); // 使用 Toast Hook
+  const toast = useToast();
 
   useEffect(() => {
-    // 从 Hash 读取 URL
-    const hash = window.location.hash;
-    if (hash.includes('url=')) {
-      const targetUrl = decodeURIComponent(hash.split('url=')[1]);
-      setUrl(targetUrl);
-      validateAndLoad(targetUrl);
-    }
+    const init = async () => {
+        const hash = window.location.hash;
+        
+        // 1. 检查是否是上传模式
+        if (hash.includes('source=upload')) {
+            setUrl('Local File (Uploaded)');
+            setIsValidating(true);
+            try {
+                const uploadedXml = await storage.getItem<string>('local:uploadedMetadata');
+                if (uploadedXml) {
+                    processXmlContent(uploadedXml, 'Uploaded File');
+                } else {
+                    toast.error("未找到上传的文件内容 (No uploaded file content found)");
+                }
+            } catch (e) {
+                console.error(e);
+                toast.error("读取本地存储失败 (Failed to read local storage)");
+            } finally {
+                setIsValidating(false);
+            }
+        } 
+        // 2. 检查是否是 URL 模式
+        else if (hash.includes('url=')) {
+            const targetUrl = decodeURIComponent(hash.split('url=')[1]);
+            setUrl(targetUrl);
+            validateAndLoad(targetUrl);
+        }
+    };
+    init();
   }, []);
 
   // Sync Dark Mode to HTML root for Portals/Popovers support
@@ -48,15 +71,40 @@ const DashboardContent: React.FC = () => {
     }
   }, [isDark]);
 
+  // 处理 XML 内容的通用逻辑
+  const processXmlContent = async (xmlText: string, sourceName: string) => {
+      setRawMetadataXml(xmlText);
+      setSchema(null); // Reset before parse
+
+      try {
+          // 统一检测版本
+          const ver = await detectODataVersion(xmlText, true);
+          setOdataVersion(ver);
+
+          if (ver === 'Unknown') {
+              toast.warning("无法识别 OData 版本，可能不是标准的 OData XML。\n(OData version not detected)");
+          } else {
+              toast.success(`成功加载 OData ${ver} (${sourceName})！`);
+          }
+
+          // 统一解析 Schema
+          const parsedSchema = parseMetadataToSchema(xmlText);
+          setSchema(parsedSchema);
+      } catch (e: any) {
+          console.error("Parse failed:", e);
+          setOdataVersion('Unknown');
+          setSchema(null);
+          toast.error(`解析 XML 失败 (Failed to parse XML):\n${e.message || e}`);
+      }
+  };
+
   const validateAndLoad = async (targetUrl: string) => {
     if (!targetUrl) {
         toast.warning("请输入有效的 URL (Please enter a valid URL)");
         return;
     }
     setIsValidating(true);
-    setSchema(null); // Reset schema during load
-    setRawMetadataXml(''); // Reset raw XML
-
+    
     try {
         // 1. 统一获取 Metadata XML
         const metadataUrl = targetUrl.endsWith('$metadata') ? targetUrl : `${targetUrl.replace(/\/$/, '')}/$metadata`;
@@ -64,26 +112,13 @@ const DashboardContent: React.FC = () => {
         if (!res.ok) throw new Error(`Fetch failed: ${res.status} ${res.statusText}`);
         
         const xmlText = await res.text();
-        setRawMetadataXml(xmlText); // Store raw XML
-        
-        // 2. 统一检测版本 (基于 XML 内容)
-        const ver = await detectODataVersion(xmlText, true);
-        setOdataVersion(ver);
-        
-        if (ver === 'Unknown') {
-             toast.warning("无法识别 OData 版本，可能不是标准的 OData 服务。\n(OData version not detected)");
-        } else {
-             toast.success(`成功加载 OData ${ver} 服务！\n(Loaded OData ${ver} Service successfully)`);
-        }
-
-        // 3. 统一解析 Schema
-        const parsedSchema = parseMetadataToSchema(xmlText);
-        setSchema(parsedSchema);
+        await processXmlContent(xmlText, 'Network URL');
 
     } catch (e: any) {
         console.error("Failed to load OData service:", e);
         setOdataVersion('Unknown');
         setSchema(null);
+        setRawMetadataXml('');
         toast.error(`加载服务失败 (Failed to load service):\n${e.message || e}`);
     } finally {
         setIsValidating(false);
@@ -147,7 +182,9 @@ const DashboardContent: React.FC = () => {
               </div>
               <h2 className="text-xl font-semibold text-default-600">No OData Service Loaded</h2>
               <p className="max-w-md text-center text-sm opacity-70">
-                Enter a valid OData Service URL (V2, V3, or V4) in the address bar above and click "Parse" to start visualizing and analyzing.
+                输入 URL 并点击 "Parse" 或通过插件弹窗上传文件。
+                <br/>
+                Enter a valid OData Service URL or upload a metadata file via the popup.
               </p>
             </div>
           ) : (
@@ -186,14 +223,15 @@ const DashboardContent: React.FC = () => {
                   {/* Query Builder View */}
                   <div className="w-full h-full absolute inset-0" style={{ display: activeTab === 'query' ? 'block' : 'none', visibility: activeTab === 'query' ? 'visible' : 'hidden' }}>
                     <div className="h-full w-full p-0">
-                        <QueryBuilder url={url} version={odataVersion} isDark={isDark} schema={schema} />
+                        {/* 如果是本地文件上传模式，某些在线查询功能可能不可用 */}
+                        <QueryBuilder url={url.startsWith('Local') ? '' : url} version={odataVersion} isDark={isDark} schema={schema} />
                     </div>
                   </div>
 
                   {/* Mock Data View */}
                   <div className="w-full h-full absolute inset-0" style={{ display: activeTab === 'mock' ? 'block' : 'none', visibility: activeTab === 'mock' ? 'visible' : 'hidden' }}>
                     <div className="h-full w-full p-4 overflow-y-auto">
-                        <MockDataGenerator url={url} version={odataVersion} schema={schema} isDark={isDark} />
+                        <MockDataGenerator url={url.startsWith('Local') ? '' : url} version={odataVersion} schema={schema} isDark={isDark} />
                     </div>
                   </div>
               </div>
