@@ -53,32 +53,41 @@ interface AssociationConstraint {
     dependent: { role: string; propertyRef: string };
 }
 
-// 智能推断 Metadata URL
-export const getMetadataUrl = (url: string): string => {
+// --- 核心：智能获取 Service Root ---
+// 从任意 URL (e.g. .../Northwind.svc/Orders) 提取根路径 (.../Northwind.svc)
+export const getServiceRoot = (url: string): string => {
     let cleanUrl = url.trim().split('#')[0].split('?')[0];
     
-    // 如果已经是 metadata 结尾
-    if (cleanUrl.toLowerCase().endsWith('$metadata')) return cleanUrl;
+    // 1. 如果已经是 $metadata 结尾，去掉它
+    if (cleanUrl.toLowerCase().endsWith('/$metadata')) {
+        return cleanUrl.substring(0, cleanUrl.length - 10);
+    }
+    if (cleanUrl.toLowerCase().endsWith('$metadata')) {
+        return cleanUrl.substring(0, cleanUrl.length - 9);
+    }
 
-    // 1. 检查 .svc (常见于 V2/V3/WCF Data Services)
-    // 例子: .../Northwind.svc/Orders -> .../Northwind.svc/$metadata
+    // 2. 检查 .svc (常见于 V2/V3/WCF Data Services)
+    // 例子: .../Northwind.svc/Orders -> .../Northwind.svc
     const svcIndex = cleanUrl.toLowerCase().indexOf('.svc');
     if (svcIndex > -1) {
-        const root = cleanUrl.substring(0, svcIndex + 4); 
-        return `${root}/$metadata`;
+        return cleanUrl.substring(0, svcIndex + 4);
     }
 
-    // 2. 检查 /odata/ (常见约定)
-    // 例子: .../api/odata/Users -> .../api/odata/$metadata
+    // 3. 检查 /odata/ (常见约定)
+    // 例子: .../api/odata/Users -> .../api/odata
     const odataIndex = cleanUrl.toLowerCase().indexOf('/odata/');
     if (odataIndex > -1) {
-        // 假设 /odata/ 是服务根路径的一部分
-        const root = cleanUrl.substring(0, odataIndex + 6); // include /odata
-        return `${root}/$metadata`;
+        return cleanUrl.substring(0, odataIndex + 6); // include /odata
     }
 
-    // 3. 默认回退：直接追加 (适用于已经是根路径的情况)
-    return cleanUrl.endsWith('/') ? `${cleanUrl}$metadata` : `${cleanUrl}/$metadata`;
+    // 4. 默认回退：假设当前 URL 就是 Base (移除末尾斜杠)
+    return cleanUrl.replace(/\/$/, '');
+};
+
+// 智能推断 Metadata URL (基于 getServiceRoot)
+export const getMetadataUrl = (url: string): string => {
+    const root = getServiceRoot(url);
+    return `${root}/$metadata`;
 };
 
 // Helper: Parse OData Version from Metadata XML string
@@ -103,15 +112,14 @@ export const detectODataVersion = async (urlOrXml: string, isXmlContent: boolean
     try {
         const metadataUrl = getMetadataUrl(url);
         // 如果推断出的 metadataUrl 和原 URL 不同，尝试获取
-        if (metadataUrl !== url) {
-            const res = await fetch(metadataUrl, { method: 'GET' });
-            if (res.ok) {
-                const text = await res.text();
-                // 简单的 XML 校验
-                if (text.includes('<edmx:Edmx')) {
-                    const ver = parseVersionFromXml(text);
-                    if (ver !== 'Unknown') return ver;
-                }
+        // 或者如果原 URL 本身就是 metadata
+        const res = await fetch(metadataUrl, { method: 'GET' });
+        if (res.ok) {
+            const text = await res.text();
+            // 简单的 XML 校验
+            if (text.includes('<edmx:Edmx')) {
+                const ver = parseVersionFromXml(text);
+                if (ver !== 'Unknown') return ver;
             }
         }
     } catch (e) {
@@ -401,7 +409,7 @@ export const parseMetadataToSchema = (xmlText: string): ParsedSchema => {
   return { entities, complexTypes, entitySets, namespace };
 };
 
-// ... (Rest of the file remains unchanged)
+// ... (Rest of the file remains unchanged: Code generators)
 // SAPUI5 Code Generator, C# Code Generator, Java Code Generator...
 export const generateSAPUI5Code = (op: 'read'|'delete'|'create'|'update', es: string, p: any, v: ODataVersion) => {
     let code = `// SAPUI5 OData ${v} Code for ${op} on ${es}\n`;

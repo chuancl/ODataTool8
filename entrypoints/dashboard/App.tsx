@@ -7,7 +7,7 @@ import { Tabs, Tab } from "@nextui-org/tabs";
 import { Input } from "@nextui-org/input";
 import { Button } from "@nextui-org/button";
 import { Chip } from "@nextui-org/chip";
-import { detectODataVersion, parseMetadataToSchema, ODataVersion, ParsedSchema, getMetadataUrl } from '@/utils/odata-helper';
+import { detectODataVersion, parseMetadataToSchema, ODataVersion, ParsedSchema, getMetadataUrl, getServiceRoot } from '@/utils/odata-helper';
 import ODataERDiagram from '@/components/ODataERDiagram';
 import QueryBuilder from '@/components/QueryBuilder';
 import MockDataGenerator from '@/components/MockDataGenerator';
@@ -60,7 +60,9 @@ const DashboardContent: React.FC = () => {
 
     try {
         // 1. 统一获取 Metadata XML (Use Smart Helper)
-        const metadataUrl = getMetadataUrl(targetUrl);
+        // 智能提取：先确定服务根路径，再获取 Metadata URL
+        const serviceRoot = getServiceRoot(targetUrl);
+        const metadataUrl = `${serviceRoot}/$metadata`;
         
         console.log(`Fetching metadata from: ${metadataUrl}`);
         const res = await fetch(metadataUrl);
@@ -76,7 +78,19 @@ const DashboardContent: React.FC = () => {
         if (ver === 'Unknown') {
              toast.warning("无法识别 OData 版本，可能不是标准的 OData 服务。\n(OData version not detected)");
         } else {
+             // 成功提示
              toast.success(`成功加载 OData ${ver} 服务！\n(Loaded OData ${ver} Service successfully)`);
+             
+             // *** 关键修复：修正 UI 上的 URL 为服务根地址 ***
+             // 如果计算出的 Root 与用户输入的 URL 不同 (例如用户输入了 /Orders)，则更新它。
+             // 避免不必要的更新（例如仅仅是少了末尾斜杠）
+             const normalizedInput = targetUrl.replace(/\/$/, '');
+             const normalizedRoot = serviceRoot.replace(/\/$/, '');
+             
+             if (normalizedRoot !== normalizedInput) {
+                 setUrl(serviceRoot);
+                 toast.info(`已自动定位到服务根路径 (Auto-redirected to Service Root):\n${serviceRoot}`);
+             }
         }
 
         // 3. 统一解析 Schema
