@@ -1,7 +1,6 @@
 
-
 import { faker } from '@faker-js/faker';
-import { EntityType, EntityProperty, ParsedSchema, ComplexType } from '@/utils/odata-helper';
+import { EntityType, EntityProperty, ParsedSchema } from '@/utils/odata-helper';
 import { DEFAULT_STRATEGIES, FAKER_DEFINITIONS } from './faker-definitions';
 
 export type MockStrategyType = 'faker' | 'custom.null' | 'custom.empty' | 'custom.undefined' | 'custom.increment' | 'custom.age' | 'custom.placeholder';
@@ -51,7 +50,7 @@ export const isStrategyCompatible = (strategyValue: string, odataType: string): 
 
 // 递归扁平化实体属性，自动展开 ComplexType
 export const flattenEntityProperties = (
-    entity: EntityType | ComplexType, 
+    entity: EntityType, 
     schema: ParsedSchema, 
     prefix: string = '',
     depth: number = 0
@@ -138,11 +137,8 @@ export const generateValue = (strategyValue: string, prop: EntityProperty, index
         const conf = incrementConfig || { start: 1, step: 1, prefix: '', suffix: '' };
         const numVal = conf.start + (index * conf.step);
         const valStr = `${conf.prefix}${numVal}${conf.suffix}`;
-        if (prop.type !== 'Edm.String' && !conf.prefix && !conf.suffix) {
-            // Early enforce constraints here to ensure number
-            return enforceConstraints(numVal, prop);
-        }
-        return enforceConstraints(valStr, prop);
+        if (prop.type !== 'Edm.String' && !conf.prefix && !conf.suffix) return numVal;
+        return valStr;
     }
 
     if (strategy.type === 'faker' && strategy.fakerModule && strategy.fakerMethod) {
@@ -163,49 +159,36 @@ export const generateValue = (strategyValue: string, prop: EntityProperty, index
 
 const enforceConstraints = (val: any, prop: EntityProperty): any => {
     if (val === null || val === undefined) return val;
-    const type = prop.type;
-
-    if (type === 'Edm.String') {
+    if (prop.type === 'Edm.String') {
         let str = String(val);
         if (prop.maxLength && prop.maxLength > 0) str = str.substring(0, prop.maxLength);
         return str;
     }
-    
-    // Robust Integer Check: Includes Edm.Int*, Edm.Byte, Edm.SByte
-    if (type.startsWith('Edm.Int') || type === 'Edm.Byte' || type === 'Edm.SByte') {
+    if (['Edm.Int16', 'Edm.Int32', 'Edm.Int64', 'Edm.Byte', 'Edm.SByte'].includes(prop.type)) {
         let num = typeof val === 'number' ? val : parseInt(val);
         if (isNaN(num)) return 0;
         
         // Byte Constraints
-        if (type === 'Edm.Byte') {
+        if (prop.type === 'Edm.Byte') {
              num = Math.abs(num) % 256; 
         }
-        else if (type === 'Edm.SByte') {
+        else if (prop.type === 'Edm.SByte') {
+             // Simple clamp for signed byte -128 to 127
              if (num > 127) num = 127;
              if (num < -128) num = -128;
         }
-        else if (type === 'Edm.Int16') { 
+        else if (prop.type === 'Edm.Int16') { 
             if (num > 32767) num = 32767; 
             if (num < -32768) num = -32768; 
         }
-        else if (type === 'Edm.Int32') {
-            if (num > 2147483647) num = 2147483647;
-            if (num < -2147483648) num = -2147483648;
-        }
-        
-        // Critical: Ensure it's an integer
         return Math.floor(num);
     }
-    
-    if (['Edm.Decimal', 'Edm.Double', 'Edm.Single'].includes(type)) {
+    if (['Edm.Decimal', 'Edm.Double', 'Edm.Single'].includes(prop.type)) {
         let num = typeof val === 'number' ? val : parseFloat(val);
         if (isNaN(num)) return 0;
         if (prop.scale !== undefined && prop.scale >= 0) num = parseFloat(num.toFixed(prop.scale));
         return num;
     }
-    
-    if (type.includes('Date') && val instanceof Date) return val.toISOString();
-    
-    // Default fallback
+    if (prop.type.includes('Date') && val instanceof Date) return val.toISOString();
     return val;
 };
