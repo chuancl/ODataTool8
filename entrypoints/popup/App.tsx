@@ -5,8 +5,7 @@ import { NextUIProvider } from "@nextui-org/system";
 import { Button } from "@nextui-org/button";
 import { Input } from "@nextui-org/input";
 import { Divider } from "@nextui-org/divider";
-import { getSettings, AppSettings } from '@/utils/storage';
-import { Settings, ExternalLink, Globe, Upload } from 'lucide-react';
+import { ExternalLink, Globe, Upload, AlertCircle } from 'lucide-react';
 import { browser } from 'wxt/browser';
 import { storage } from 'wxt/storage';
 import { ToastProvider, useToast } from '@/components/ui/ToastContext';
@@ -15,29 +14,51 @@ import '../../assets/main.css';
 // 内部组件使用 Toast
 const PopupContent: React.FC = () => {
   const [manualInput, setManualInput] = useState('');
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const toast = useToast();
 
   // 尝试获取当前 Tab URL 填充输入框
   useEffect(() => {
-    browser.tabs.query({ active: true, currentWindow: true }).then((tabs) => {
-      const currentUrl = tabs[0]?.url;
-      if (currentUrl && (currentUrl.includes('.svc') || currentUrl.includes('/odata/') || currentUrl.includes('$metadata'))) {
-        setManualInput(currentUrl);
-      }
-    });
+    const init = async () => {
+        try {
+            const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+            const currentUrl = tabs[0]?.url;
+            if (currentUrl && (currentUrl.includes('.svc') || currentUrl.includes('/odata/') || currentUrl.includes('$metadata'))) {
+                setManualInput(currentUrl);
+            }
+        } catch (e) {
+            console.error("Failed to query tabs:", e);
+            // 这里不设置 ErrorMsg，因为获取 URL 失败不应阻止 UI 渲染，只影响自动填充
+        }
+    };
+    init();
   }, []);
 
   const openDashboard = (url?: string) => {
-    const targetUrl = url || manualInput;
-    const pagePath = 'dashboard.html';
-    
-    if (targetUrl) {
-      const dashboardUrl = (browser.runtime as any).getURL(`${pagePath}#url=${encodeURIComponent(targetUrl)}`);
-      browser.tabs.create({ url: dashboardUrl });
-    } else {
-      const dashboardUrl = (browser.runtime as any).getURL(pagePath);
-      browser.tabs.create({ url: dashboardUrl });
+    try {
+        const targetUrl = url || manualInput;
+        const pagePath = 'dashboard.html';
+        
+        let dashboardUrl: string;
+        // 安全获取 URL
+        // Fix: Cast to any to bypass TS error: Property 'getURL' does not exist on type 'WxtRuntime & Omit<typeof runtime, "getURL">'
+        const runtime = browser.runtime as any;
+        if (runtime.getURL) {
+            dashboardUrl = runtime.getURL(pagePath);
+        } else {
+            dashboardUrl = runtime.getURL(pagePath);
+        }
+
+        if (targetUrl) {
+            dashboardUrl += `#url=${encodeURIComponent(targetUrl)}`;
+        }
+        
+        browser.tabs.create({ url: dashboardUrl });
+    } catch (e: any) {
+        console.error("Navigation failed:", e);
+        setErrorMsg("无法打开新标签页 (Navigation failed)");
+        toast.error("Failed to open Dashboard");
     }
   };
 
@@ -51,12 +72,11 @@ const PopupContent: React.FC = () => {
         // 将文件内容保存到 storage，以便 dashboard 读取
         await storage.setItem('local:uploadedMetadata', text);
         
-        // 打开 Dashboard，标记 source 为 upload
-        const pagePath = 'dashboard.html';
-        const dashboardUrl = (browser.runtime as any).getURL(`${pagePath}#source=upload`);
-        browser.tabs.create({ url: dashboardUrl });
+        openDashboard('Local File (Uploaded)');
         
-        toast.success("文件读取成功，正在打开分析页...");
+        // 注意：Popup 打开新标签页后通常会自动关闭，所以 Toast 可能看不见，
+        // 但为了逻辑完整性保留
+        // toast.success("Opening analysis...");
     } catch (err) {
         console.error(err);
         toast.error("读取文件失败");
@@ -67,6 +87,16 @@ const PopupContent: React.FC = () => {
         }
     }
   };
+
+  if (errorMsg) {
+      return (
+          <div className="w-[360px] p-4 bg-background text-danger flex flex-col items-center gap-2">
+              <AlertCircle size={24} />
+              <p className="text-sm font-bold">Error</p>
+              <p className="text-xs">{errorMsg}</p>
+          </div>
+      );
+  }
 
   return (
       <div className="w-[360px] bg-background text-foreground flex flex-col h-fit max-h-[600px] border border-divider">
